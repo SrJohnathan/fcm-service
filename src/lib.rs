@@ -19,14 +19,17 @@ pub struct FcmPayload {
 
 pub struct FcmService {
     pub credential_file: String,
+    include_str: bool,
 }
 
 impl FcmService {
-    pub fn new(credential_file: impl Into<String>) -> Self {
+    pub fn new(credential_file: impl Into<String>, include_str:bool) -> Self {
         Self {
             credential_file: credential_file.into(),
+            include_str,
         }
     }
+
 }
 
 /// Service for sending Firebase Cloud Messaging (FCM) notifications using the v1 API.
@@ -57,8 +60,13 @@ impl FcmService {
 impl FcmService {
     /// Extracts the project ID from the service account credential file.
     fn get_project_id(&self) -> Result<String, Box<dyn Error>> {
-        let content = fs::read_to_string(&self.credential_file)?;
-        let json: Value = serde_json::from_str(&content)?;
+
+        let json: Value = if  self.include_str {
+            serde_json::from_str(&self.credential_file)?
+        } else {
+            let content = fs::read_to_string(&self.credential_file)?;
+             serde_json::from_str(&content)?
+        };
 
         json.get("project_id")
             .and_then(|v| v.as_str())
@@ -125,7 +133,7 @@ mod tests {
 
     #[test]
     fn test_new_service() {
-        let service = FcmService::new("dummy.json");
+        let service = FcmService::new("dummy.json",false);
         assert_eq!(service.credential_file, "dummy.json");
     }
 
@@ -133,14 +141,14 @@ mod tests {
     fn test_get_project_id_success() {
         let temp_dir = tempfile::tempdir().unwrap();
         let credential_file = setup_dummy_credentials(&temp_dir);
-        let service = FcmService::new(credential_file);
+        let service = FcmService::new(credential_file,false);
         let project_id = service.get_project_id().unwrap();
         assert_eq!(project_id, "test-project");
     }
 
     #[test]
     fn test_get_project_id_missing_file() {
-        let service = FcmService::new("nonexistent.json");
+        let service = FcmService::new("nonexistent.json",false);
         let result = service.get_project_id();
         assert!(result.is_err());
         assert!(matches!(
@@ -155,7 +163,7 @@ mod tests {
         let credential_path = temp_dir.path().join("service-account.json");
         let mut file = File::create(&credential_path).unwrap();
         writeln!(file, "invalid json").unwrap();
-        let service = FcmService::new(credential_path.to_str().unwrap());
+        let service = FcmService::new(credential_path.to_str().unwrap(),false);
         let result = service.get_project_id();
         assert!(result.is_err());
     }
